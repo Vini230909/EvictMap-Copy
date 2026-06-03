@@ -37,13 +37,12 @@ import java.util.Set;
  * - equal 25% initial chance for each connection template
  * - only the minimum number of edges is repaired if a seed would split the map
  * - four wall / connection templates
+ * - first-test resource generator: ores, shallow water and tar/oil
  *
  * Deliberately not included yet:
  * - separate teams for each core
  * - team assignment
- * - ores
- * - water
- * - balancing rules beyond connectivity
+ * - final resource balancing
  */
 public class EvictMapPlugin extends Plugin {
 
@@ -156,7 +155,7 @@ public class EvictMapPlugin extends Plugin {
             }
         });
 
-        Log.info("[EvictMapGenerator] Loaded. Code revision 0.3.2. Use 'evictstatus' for commands and current settings.");
+        Log.info("[EvictMapGenerator] Loaded. Code revision 0.4.0. Use 'evictstatus' for commands and current settings.");
     }
 
     @Override
@@ -261,6 +260,7 @@ public class EvictMapPlugin extends Plugin {
                     percent(CENTER_FILLED_HEX_BONUS),
                     CENTER_BONUS_RADIUS
                 );
+                Log.info("[EvictMapGenerator] resources: @", ResourceGenerator.presetDescription());
                 Log.info("[EvictMapGenerator] edge weights: full=@%, thin=@%, open=@%, passage=@%",
                     percent(FULL_WEIGHT),
                     percent(THIN_WEIGHT),
@@ -313,17 +313,22 @@ public class EvictMapPlugin extends Plugin {
 
         applyConnectionTemplates(walls, zones, centers, edgeTypes);
         applyTerrainToWorld(walls);
+
+        ResourceGenerator.Summary resourceSummary =
+            ResourceGenerator.generate(seed, resourceCenters(centers, normalCells));
+
         placeNucleusCores(centers, normalCells);
 
         lastSeed = seed;
 
         Log.info(
-            "[EvictMapGenerator] Done. seed=@ normalHexes=@ filledHexes=@ nucleusCores=@ repairedConnectivityEdges=@",
+            "[EvictMapGenerator] Done. seed=@ normalHexes=@ filledHexes=@ nucleusCores=@ repairedConnectivityEdges=@ resources=@",
             seed,
             normalCells.size(),
             filledCells.size(),
             normalCells.size(),
-            repairedConnectivityEdges.size()
+            repairedConnectivityEdges.size(),
+            resourceSummary.compact()
         );
     }
 
@@ -894,6 +899,20 @@ public class EvictMapPlugin extends Plugin {
                 tile.setBlock(walls[y][x] ? Blocks.dirtWall : Blocks.air);
             }
         }
+    }
+
+    private List<ResourceGenerator.HexCenter> resourceCenters(
+        Map<Cell, Point> centers,
+        List<Cell> normalCells
+    ) {
+        List<ResourceGenerator.HexCenter> result = new ArrayList<>();
+
+        for (Cell cell : normalCells) {
+            Point center = centers.get(cell);
+            result.add(new ResourceGenerator.HexCenter(center.x, center.y));
+        }
+
+        return result;
     }
 
     private void placeNucleusCores(
