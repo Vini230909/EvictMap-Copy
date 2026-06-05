@@ -72,13 +72,23 @@ final class ResourceGenerator {
      *   naturally resource-rich or resource-poor
      * - small tilts make some fields slightly stretched instead of circular
      */
+    /**
+     * Strict ore-only editor-preset test.
+     *
+     * Order intentionally matches the provided editor screenshot:
+     * copper, lead, coal, titanium, thorium, scrap.
+     *
+     * Ores use the five visible editor parameters exactly. Warp strength and
+     * richness strength are disabled for this test so hidden custom modifiers
+     * do not distort the comparison. Water and tar presets remain unchanged.
+     */
     private static final NoisePreset[] ORE_PRESETS = new NoisePreset[]{
-        new NoisePreset(Blocks.oreCopper,   101, 34.0f, 0.792f, 2f, 0.30f,  0.08f, 6.0f, 125.0f, 0.028f),
-        new NoisePreset(Blocks.oreLead,     211, 33.0f, 0.800f, 2f, 0.30f, -0.06f, 6.0f, 120.0f, 0.027f),
-        new NoisePreset(Blocks.oreCoal,     307, 30.0f, 0.815f, 2f, 0.32f,  0.13f, 5.5f, 110.0f, 0.026f),
-        new NoisePreset(Blocks.oreScrap,    353, 30.0f, 0.817f, 2f, 0.32f, -0.11f, 5.5f, 110.0f, 0.026f),
-        new NoisePreset(Blocks.oreTitanium, 401, 27.0f, 0.837f, 2f, 0.30f,  0.05f, 5.0f, 105.0f, 0.024f),
-        new NoisePreset(Blocks.oreThorium,  503, 27.5f, 0.845f, 2f, 0.30f, -0.04f, 5.0f, 105.0f, 0.024f)
+        new NoisePreset(Blocks.oreCopper,   101, 22.45f, 0.81f, 3.10f, 0.13f, 0.0f, 0.0f, 125.0f, 0.0f),
+        new NoisePreset(Blocks.oreLead,     211, 22.45f, 0.81f, 3.10f, 0.30f, 0.0f, 0.0f, 120.0f, 0.0f),
+        new NoisePreset(Blocks.oreCoal,     307, 24.95f, 0.84f, 1.71f, 0.30f, 0.0f, 0.0f, 110.0f, 0.0f),
+        new NoisePreset(Blocks.oreTitanium, 401, 24.95f, 0.86f, 1.98f, 0.12f, 0.0f, 0.0f, 105.0f, 0.0f),
+        new NoisePreset(Blocks.oreThorium,  503, 24.95f, 0.88f, 2.20f, 0.22f, 0.0f, 0.0f, 105.0f, 0.0f),
+        new NoisePreset(Blocks.oreScrap,    353, 19.96f, 0.85f, 2.34f, 0.20f, 0.0f, 0.0f, 110.0f, 0.0f)
     };
 
     private static final NoisePreset WATER_PRESET =
@@ -139,7 +149,7 @@ final class ResourceGenerator {
     }
 
     static String presetDescription() {
-        return "warped global noise + rich/poor regions + tiny per-hex fairness repairs";
+        return "strict editor-style ore preset test + unchanged liquid presets + tiny per-hex fairness repairs";
     }
 
     // ---------------------------------------------------------------------
