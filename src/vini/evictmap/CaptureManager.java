@@ -47,7 +47,7 @@ final class CaptureManager {
 
         TeamManager.HexSlot slot = findSlotByCoreTile(core.tile.x, core.tile.y);
 
-        if (slot == null || slot.capturing) {
+        if (slot == null || slot.extinct || slot.capturing) {
             return;
         }
 
@@ -96,7 +96,8 @@ final class CaptureManager {
         AttritionManager attritionManager
     ) {
         if (
-            !teamManager.isRoundActiveForSystems()
+            !roundActive
+                || resetting
                 || scheduledRoundSerial != teamManager.roundSerial()
                 || !slot.capturing
         ) {
@@ -163,7 +164,8 @@ final class CaptureManager {
         long scheduledRoundSerial
     ) {
         if (
-            !teamManager.isRoundActiveForSystems()
+            !roundActive
+                || resetting
                 || scheduledRoundSerial != teamManager.roundSerial()
                 || !slot.capturing
         ) {
@@ -304,7 +306,7 @@ final class CaptureManager {
 
     private TeamManager.HexSlot findSlotByCoreTile(int x, int y) {
         for (TeamManager.HexSlot slot : teamManager.slots()) {
-            if (slot.x == x && slot.y == y) {
+            if (!slot.extinct && slot.x == x && slot.y == y) {
                 return slot;
             }
         }

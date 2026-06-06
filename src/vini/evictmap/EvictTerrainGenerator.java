@@ -1049,6 +1049,15 @@ final class EvictTerrainGenerator {
     }
 
     private boolean tryAddFilledCell(Set<Cell> filled, Cell candidate, List<Cell> cells) {
+        /**
+         * Extinction always ends with the center plus its six neighbours.
+         * These seven cells must therefore never become procedural filled
+         * rooms during map generation.
+         */
+        if (isExtinctionFinalCell(candidate)) {
+            return false;
+        }
+
         if (filled.contains(candidate)) {
             return true;
         }
@@ -1073,6 +1082,44 @@ final class EvictTerrainGenerator {
         }
 
         return false;
+    }
+
+    private boolean isExtinctionFinalCell(Cell candidate) {
+        Cell center = new Cell(SHORT_ROW_COLS / 2, ROWS / 2);
+
+        return gridDistance(candidate, center) <= 1;
+    }
+
+    private int gridDistance(Cell start, Cell target) {
+        if (start.equals(target)) {
+            return 0;
+        }
+
+        Deque<CellStep> queue = new ArrayDeque<>();
+        Set<Cell> visited = new HashSet<>();
+
+        queue.addLast(new CellStep(start, 0));
+        visited.add(start);
+
+        while (!queue.isEmpty()) {
+            CellStep step = queue.removeFirst();
+
+            for (Cell neighbour : neighbors(step.cell)) {
+                if (!visited.add(neighbour)) {
+                    continue;
+                }
+
+                int distance = step.distance + 1;
+
+                if (neighbour.equals(target)) {
+                    return distance;
+                }
+
+                queue.addLast(new CellStep(neighbour, distance));
+            }
+        }
+
+        return Integer.MAX_VALUE;
     }
 
     private boolean graphIsConnected(List<Cell> cells) {
@@ -1495,6 +1542,9 @@ final class EvictTerrainGenerator {
     }
 
     private record Cell(int col, int row) {
+    }
+
+    private record CellStep(Cell cell, int distance) {
     }
 
     private record Point(int x, int y) {

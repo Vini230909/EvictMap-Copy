@@ -2,6 +2,7 @@ package vini.evictmap;
 
 import arc.func.Cons;
 import arc.util.Log;
+import arc.util.Time;
 import mindustry.Vars;
 import mindustry.content.Blocks;
 import mindustry.game.Team;
@@ -73,6 +74,35 @@ final class TeamManager {
 
     private static final long TEAM_RANDOM_XOR = 0x5445414d2d455649L;
 
+    /**
+     * Captures intentionally do not complete instantly. The empty center is
+     * visible for a few seconds before the attacker's small Core Shard appears.
+     */
+    private static final float CAPTURE_DELAY_TICKS = 5f * 60f;
+
+    /**
+     * Capture cleanup follows the real Evict core range exactly.
+     *
+     * Every synthetic building whose center is within 40 tiles of the
+     * destroyed core is removed, including buildings inside the overlap with
+     * a neighbouring hex. This is intentionally core range, not build range.
+     */
+    private static final int CAPTURE_CLEAR_RADIUS = 40;
+    private static final int CAPTURE_CLEAR_RADIUS_SQUARED =
+        CAPTURE_CLEAR_RADIUS * CAPTURE_CLEAR_RADIUS;
+
+    /**
+     * The generated playable hex circles use radius 39. Extinction converts
+     * each collapsed logical hex circle into space without touching the
+     * surviving neighbour selected by the nearest-center check.
+     */
+    private static final int EXTINCTION_HEX_RADIUS = 39;
+    private static final int EXTINCTION_HEX_RADIUS_SQUARED =
+        EXTINCTION_HEX_RADIUS * EXTINCTION_HEX_RADIUS;
+
+    private static final int CENTER_ROW = ROWS / 2;
+    private static final int CENTER_COL = SHORT_ROW_COLS / 2;
+
     private final List<HexSlot> slots = new ArrayList<>();
     private final Map<String, Integer> teamIdByPlayerUuid = new HashMap<>();
     private final Map<Integer, String> playerNameByTeamId = new HashMap<>();
@@ -95,6 +125,7 @@ final class TeamManager {
     private boolean roundActivated = false;
     private boolean resetting = false;
     private boolean suppressCoreChangeEvents = false;
+    private boolean extinctionActive = false;
     private long roundSerial = 0L;
 
     TeamManager(Cons<Team> victoryHandler) {
@@ -123,12 +154,14 @@ final class TeamManager {
             slot.ownerTeamId = FALLEN_TEAM_ID;
             slot.capturing = false;
             slot.pendingCaptureTeamId = FALLEN_TEAM_ID;
+            slot.extinct = false;
         }
 
         random = new Random(seed ^ TEAM_RANDOM_XOR);
         roundSerial++;
         roundActivated = false;
         resetting = false;
+        extinctionActive = false;
         roundActive = true;
 
         Log.info(
@@ -298,7 +331,8 @@ final class TeamManager {
 
         for (HexSlot slot : slots) {
             if (
-                slot.ownerTeamId == FALLEN_TEAM_ID
+                !slot.extinct
+                    && slot.ownerTeamId == FALLEN_TEAM_ID
                     && !slot.capturing
                     && farEnoughFromClaimedTeamHexes(slot)
             ) {
@@ -867,6 +901,7 @@ final class TeamManager {
         if (
             !roundActive
                 || resetting
+                || extinctionActive
                 || slots.isEmpty()
         ) {
             return;
@@ -1052,7 +1087,275 @@ final class TeamManager {
     }
 
     private int effectiveOwnerTeamId(HexSlot slot) {
+        if (slot.extinct) {
+            return Team.derelict.id;
+        }
+
         return slot.capturing ? slot.pendingCaptureTeamId : slot.ownerTeamId;
+    }
+
+    boolean isRoundActivated() {
+        return roundActivated;
+    }
+
+    void setExtinctionActive(boolean active) {
+        extinctionActive = active;
+    }
+
+    int gridDistanceFromCenter(HexSlot slot) {
+        return gridDistance(
+            new HexSlot(CENTER_COL, CENTER_ROW, 0, 0, 0),
+            slot
+        );
+    }
+
+    Team centerHexOwner() {
+        for (HexSlot slot : slots) {
+            if (slot.col == CENTER_COL && slot.row == CENTER_ROW) {
+                return Team.get(effectiveOwnerTeamId(slot));
+            }
+        }
+
+        return Team.derelict;
+    }
+
+    void collapseHexesForExtinction(List<HexSlot> collapsingSlots) {
+        if (
+            !roundActive
+                || resetting
+                || collapsingSlots == null
+                || collapsingSlots.isEmpty()
+        ) {
+            return;
+        }
+
+        Set<HexSlot> collapsing = new HashSet<>(collapsingSlots);
+
+        /**
+         * Logical ownership is removed first. CoreChangeEvents emitted while
+         * deleting blocks therefore cannot start normal capture timers.
+         */
+        for (HexSlot slot : collapsing) {
+            slot.extinct = true;
+            slot.capturing = false;
+            slot.ownerTeamId = Team.derelict.id;
+            slot.pendingCaptureTeamId = Team.derelict.id;
+        }
+
+        List<Tile> buildingCenters = new ArrayList<>();
+        List<Unit> unitsToKill = new ArrayList<>();
+        List<Tile> terrainTiles = new ArrayList<>();
+
+        for (Tile tile : Vars.world.tiles) {
+            if (
+                tile != null
+                    && belongsToCollapsedHex(tile.x, tile.y, collapsing)
+            ) {
+                terrainTiles.add(tile);
+
+                if (
+                    tile.build != null
+                        && tile.isCenter()
+                ) {
+                    buildingCenters.add(tile);
+                }
+            }
+        }
+
+        Groups.unit.each(unit -> {
+            if (
+                unit != null
+                    && unit.isAdded()
+                    && belongsToCollapsedHex(
+                        unit.tileX(),
+                        unit.tileY(),
+                        collapsing
+                    )
+            ) {
+                unitsToKill.add(unit);
+            }
+        });
+
+        suppressCoreChangeEvents = true;
+
+        try {
+            for (Tile tile : buildingCenters) {
+                if (tile.build != null && tile.isCenter()) {
+                    tile.removeNet();
+                }
+            }
+
+            for (Unit unit : unitsToKill) {
+                if (unit.isAdded()) {
+                    unit.kill();
+                }
+            }
+
+            for (Tile tile : terrainTiles) {
+                if (tile.block() != Blocks.air) {
+                    tile.removeNet();
+                }
+
+                tile.setFloorNet(Blocks.space);
+            }
+        } finally {
+            suppressCoreChangeEvents = false;
+        }
+
+        eliminateCorelessTeamsThroughExtinction();
+
+        Log.info(
+            "[EvictMapGenerator] Extinction collapsed @ hexes, removed @ building centers and killed @ units.",
+            collapsing.size(),
+            buildingCenters.size(),
+            unitsToKill.size()
+        );
+    }
+
+    void finishExtinction(Team winner, boolean overtime) {
+        if (
+            !roundActive
+                || resetting
+                || winner == null
+                || winner == Team.derelict
+        ) {
+            return;
+        }
+
+        resetting = true;
+        roundActive = false;
+
+        if (winner == FALLEN_TEAM) {
+            Call.sendMessage(
+                "[scarlet]Fallen[] won EXTINCTION because no active personal team survived."
+            );
+
+            Log.info(
+                "[EvictMapGenerator] Extinction winner: Fallen. No active personal team survived. Starting guarded post-game reset."
+            );
+        } else {
+            Call.sendMessage(
+                "[accent]"
+                    + displayTeam(winner)
+                    + "[] won EXTINCTION by controlling the center core"
+                    + (overtime
+                        ? " during overtime."
+                        : " after the 4-minute final hold.")
+            );
+
+            Log.info(
+                "[EvictMapGenerator] Extinction winner: @. Starting guarded post-game reset.",
+                displayTeam(winner)
+            );
+        }
+
+        victoryHandler.get(winner);
+    }
+
+    private void eliminateCorelessTeamsThroughExtinction() {
+        List<Integer> teamIds = new ArrayList<>(personalTeamCreationOrder);
+
+        for (int teamId : teamIds) {
+            if (
+                eliminatedTeamIds.contains(teamId)
+                    || ownsAnyHex(teamId)
+            ) {
+                continue;
+            }
+
+            eliminateTeamThroughExtinction(Team.get(teamId));
+        }
+
+        if (!hasActivePersonalTeam()) {
+            finishExtinction(FALLEN_TEAM, false);
+        }
+    }
+
+    private void eliminateTeamThroughExtinction(Team team) {
+        if (
+            team == null
+                || team == FALLEN_TEAM
+                || team == Team.derelict
+                || eliminatedTeamIds.contains(team.id)
+        ) {
+            return;
+        }
+
+        eliminatedTeamIds.add(team.id);
+
+        List<String> eliminatedPlayerUuids =
+            moveTeamPlayersToFallen(
+                team,
+                null,
+                "[scarlet]Your team was consumed by EXTINCTION. You are now Fallen.[]"
+            );
+
+        /**
+         * Extinction has no conquering team. Existing claims held by the
+         * eliminated team are released instead of transferred.
+         */
+        transferExistingClaims(team, null);
+
+        if (inviteManager != null) {
+            inviteManager.handleTeamEliminated(
+                team,
+                null,
+                eliminatedPlayerUuids
+            );
+        }
+
+        Call.sendMessage(
+            "[scarlet]"
+                + displayTeam(team)
+                + "[] was eliminated by EXTINCTION."
+        );
+
+        Log.info(
+            "[EvictMapGenerator] Extinction elimination: @ lost every surviving core.",
+            displayTeam(team)
+        );
+    }
+
+    private boolean hasActivePersonalTeam() {
+        for (int teamId : personalTeamCreationOrder) {
+            if (
+                !eliminatedTeamIds.contains(teamId)
+                    && ownsAnyHex(teamId)
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean belongsToCollapsedHex(
+        int tileX,
+        int tileY,
+        Set<HexSlot> collapsing
+    ) {
+        HexSlot closest = closestHexSlotIncludingExtinct(tileX, tileY);
+
+        return closest != null
+            && collapsing.contains(closest)
+            && squaredDistance(tileX, tileY, closest)
+                <= EXTINCTION_HEX_RADIUS_SQUARED;
+    }
+
+    private HexSlot closestHexSlotIncludingExtinct(int tileX, int tileY) {
+        HexSlot closest = null;
+        long closestDistanceSquared = Long.MAX_VALUE;
+
+        for (HexSlot slot : slots) {
+            long distanceSquared = squaredDistance(tileX, tileY, slot);
+
+            if (distanceSquared < closestDistanceSquared) {
+                closest = slot;
+                closestDistanceSquared = distanceSquared;
+            }
+        }
+
+        return closest;
     }
 
     List<HexSlot> slots() {
@@ -1139,6 +1442,10 @@ final class TeamManager {
         long closestDistanceSquared = Long.MAX_VALUE;
 
         for (HexSlot slot : slots) {
+            if (slot.extinct) {
+                continue;
+            }
+
             long distanceSquared = squaredDistance(tileX, tileY, slot);
 
             if (distanceSquared < closestDistanceSquared) {
@@ -1253,6 +1560,7 @@ final class TeamManager {
         int ownerTeamId = FALLEN_TEAM_ID;
         boolean capturing = false;
         int pendingCaptureTeamId = FALLEN_TEAM_ID;
+        boolean extinct = false;
 
         HexSlot(
             int col,
