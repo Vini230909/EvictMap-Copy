@@ -34,7 +34,7 @@ final class EvictHelpCommands {
         handler.<Player>register(
             "help",
             "[category] [page]",
-            "Lists normal commands. Use /help dev for development commands.",
+            "Lists normal commands.",
             (args, player) -> showHelp(handler, args, player)
         );
     }
@@ -100,11 +100,7 @@ final class EvictHelpCommands {
                 .append("\n");
         }
 
-        if (!request.devCommands) {
-            result.append(
-                "\n[lightgray]Use [orange]/help dev[] [lightgray]to view development commands.[]"
-            );
-        } else if (pages > 1 && request.page < pages) {
+        if (request.devCommands && pages > 1 && request.page < pages) {
             result.append(
                 "\n[lightgray]Next page: [orange]/help dev "
                     + (request.page + 1)
@@ -122,9 +118,11 @@ final class EvictHelpCommands {
         Seq<Command> result = new Seq<>();
 
         for (Command command : handler.getCommandList()) {
-            boolean isDevCommand = EvictCommandCatalog.DEV_COMMANDS.contains(command.text);
+            boolean isHelpCommand = command.text.equals("help");
+            boolean isDevCommand =
+                EvictCommandCatalog.DEV_COMMANDS.contains(command.text);
 
-            if (devCommands == isDevCommand) {
+            if (!isHelpCommand && devCommands == isDevCommand) {
                 result.add(command);
             }
         }
