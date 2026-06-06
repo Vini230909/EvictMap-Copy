@@ -2,7 +2,7 @@
   "name": "EvictMapGenerator",
   "author": "Vini2309",
   "main": "vini.evictmap.EvictMapPlugin",
-  "description": "Server-side Evict-style Mindustry PvP plugin with procedural hex maps, captures, claims, split persistent attrition and Extinction. Extinction warnings now clearly explain the middle-core victory objective and the four-minute final phase.",
-  "version": "1.2.5",
+  "description": "Server-side Evict-style Mindustry PvP plugin with procedural hex maps, captures, claims, split persistent attrition and Extinction. Includes the cumulative throttled-terrain TeamManager changes required by the faster Extinction collapse sequence.",
+  "version": "1.2.6",
   "minGameVersion": "157.4"
 }
