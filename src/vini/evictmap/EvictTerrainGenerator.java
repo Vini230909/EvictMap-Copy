@@ -101,13 +101,14 @@ final class EvictTerrainGenerator {
     // Small extra chance near the map centre.
     // It fades smoothly to zero before reaching the outer rows.
     // Squared distance is used so no square root is needed.
-    private static final double CENTER_FILLED_HEX_BONUS = 0.08;
+    private static final double CENTER_FILLED_HEX_BONUS = 0.12;
     private static final int CENTER_BONUS_RADIUS = 180;
     private static final int CENTER_BONUS_RADIUS_SQUARED =
         CENTER_BONUS_RADIUS * CENTER_BONUS_RADIUS;
 
-    // Prevent unusually unlucky seeds from removing too many rooms.
-    private static final int MAX_FILLED_HEXES = 8;
+    // Keep every map inside a predictable filled-hex range.
+    private static final int MIN_FILLED_HEXES = 6;
+    private static final int MAX_FILLED_HEXES = 12;
 
     private static final double CHAIN_START_CHANCE = 0.22;
     private static final double CHAIN_CONTINUE_CHANCE = 0.48;
@@ -227,7 +228,8 @@ final class EvictTerrainGenerator {
         );
 
         Log.info(
-            "[EvictMapGenerator] filled hexes: max=@, centre bonus up to @% within @ tiles",
+            "[EvictMapGenerator] filled hexes: min=@, max=@, centre bonus up to @% within @ tiles",
+            MIN_FILLED_HEXES,
             MAX_FILLED_HEXES,
             percent(CENTER_FILLED_HEX_BONUS),
             CENTER_BONUS_RADIUS
@@ -1000,6 +1002,46 @@ final class EvictTerrainGenerator {
                 if (!accepted) {
                     break;
                 }
+            }
+        }
+
+        /**
+         * Chance-based generation may occasionally produce too few filled
+         * rooms. Add random connectivity-safe candidates until the configured
+         * minimum is reached.
+         */
+        if (filled.size() < MIN_FILLED_HEXES) {
+            List<Cell> minimumCandidates = new ArrayList<>(cells);
+            Collections.shuffle(minimumCandidates, random);
+
+            boolean added;
+
+            do {
+                added = false;
+
+                for (Cell candidate : minimumCandidates) {
+                    if (
+                        filled.size() >= MIN_FILLED_HEXES
+                            || filled.contains(candidate)
+                    ) {
+                        continue;
+                    }
+
+                    if (tryAddFilledCell(filled, candidate, cells)) {
+                        added = true;
+                    }
+                }
+            } while (
+                filled.size() < MIN_FILLED_HEXES
+                    && added
+            );
+
+            if (filled.size() < MIN_FILLED_HEXES) {
+                throw new IllegalStateException(
+                    "Could not place the configured minimum of "
+                        + MIN_FILLED_HEXES
+                        + " filled hexes without disconnecting the map."
+                );
             }
         }
 
